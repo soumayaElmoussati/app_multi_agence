@@ -18,6 +18,17 @@ import 'products_screen.dart';
 import 'pos_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
+  final Map<String, dynamic>? userData;
+  final String? token;
+  final Map<String, dynamic>? selectedAgency;
+
+  const DashboardScreen({
+    Key? key,
+    this.userData,
+    this.token,
+    this.selectedAgency,
+  }) : super(key: key);
+
   @override
   _DashboardScreenState createState() => _DashboardScreenState();
 }

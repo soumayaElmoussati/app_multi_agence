@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:multi_agences_app/screens/signup_screen.dart';
 import 'screens/login_screen.dart';
 import 'theme/app_theme.dart';
 
@@ -13,6 +14,7 @@ class MyApp extends StatelessWidget {
       title: 'Multi-Agences Pro',
       theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,
+      //  home: SignupScreen(),
       home: LoginScreen(),
     );
   }

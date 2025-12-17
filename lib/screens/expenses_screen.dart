@@ -4,6 +4,10 @@ import '../screens/categories_screen.dart';
 import '../screens/clients_screen.dart';
 import '../screens/suppliers_screen.dart';
 import '../screens/units_screen.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:multi_agences_app/services/selected_agency_service.dart';
 
 class ExpensesScreen extends StatefulWidget {
   const ExpensesScreen({Key? key}) : super(key: key);
@@ -13,35 +17,9 @@ class ExpensesScreen extends StatefulWidget {
 }
 
 class _ExpensesScreenState extends State<ExpensesScreen> {
-  final List<Map<String, dynamic>> _expenses = [
-    {
-      'id': '1',
-      'category': 'Loyer',
-      'amount': 5000.0,
-      'date': '2024-01-15',
-      'description': 'Loyer du mois de Janvier',
-      'paymentMethod': 'Virement',
-      'status': 'Payé',
-    },
-    {
-      'id': '2',
-      'category': 'Électricité',
-      'amount': 850.0,
-      'date': '2024-01-10',
-      'description': 'Facture d\'électricité',
-      'paymentMethod': 'Espèces',
-      'status': 'Payé',
-    },
-    {
-      'id': '3',
-      'category': 'Salaires',
-      'amount': 25000.0,
-      'date': '2024-01-05',
-      'description': 'Paiement des salaires',
-      'paymentMethod': 'Virement',
-      'status': 'Payé',
-    },
-  ];
+  List<Map<String, dynamic>> _expenses = [];
+  bool _isLoading = true;
+  String _errorMessage = '';
 
   final List<String> _categories = [
     'Loyer',
@@ -56,23 +34,22 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     'Autres',
   ];
 
-  final List<String> _paymentMethods = [
-    'Espèces',
-    'Chèque',
-    'Virement',
-    'Carte bancaire',
-    'Crédit',
-  ];
+  // Contrôleurs pour le formulaire d'ajout
+  final TextEditingController _addNameController = TextEditingController();
+  final TextEditingController _addAmountController = TextEditingController();
+  final TextEditingController _addDescriptionController =
+      TextEditingController();
 
-  final TextEditingController _categoryController = TextEditingController();
-  final TextEditingController _amountController = TextEditingController();
-  final TextEditingController _dateController = TextEditingController();
-  final TextEditingController _descriptionController = TextEditingController();
+  // Contrôleurs pour le formulaire de modification
+  final TextEditingController _editNameController = TextEditingController();
+  final TextEditingController _editAmountController = TextEditingController();
+  final TextEditingController _editDescriptionController =
+      TextEditingController();
 
   String _selectedCategory = 'Loyer';
-  String _selectedPaymentMethod = 'Espèces';
-  String _selectedStatus = 'Payé';
-  DateTime _selectedDate = DateTime.now();
+  String _editSelectedCategory = 'Loyer';
+  Map<String, dynamic>? _selectedAgency;
+  int? _editingExpenseId;
 
   double _totalExpenses = 0.0;
   double _monthlyBudget = 50000.0;
@@ -83,141 +60,366 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   @override
   void initState() {
     super.initState();
-    _calculateTotalExpenses();
-    _dateController.text = _formatDate(DateTime.now());
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    // Vérifier si une agence est sélectionnée
+    _selectedAgency = await SelectedAgencyService.getSelectedAgency();
+    // Charger les dépenses
+    await _loadExpenses();
+  }
+
+  Future<void> _loadExpenses() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+
+      if (token == null) {
+        setState(() {
+          _errorMessage = 'Utilisateur non connecté';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      String url = 'http://localhost:8000/api/expenses';
+      if (_selectedAgency != null && _selectedAgency!['id'] != null) {
+        url += '?agency_id=${_selectedAgency!['id']}';
+      }
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final jsonResponse = json.decode(response.body);
+
+        if (jsonResponse['success']) {
+          final expensesData = jsonResponse['data'] as List;
+
+          setState(() {
+            _expenses = expensesData.map((expense) {
+              return {
+                'id': expense['id'],
+                'category': 'Autres', // Par défaut
+                'name': expense['name'],
+                'amount': double.parse(expense['amount'].toString()),
+                'date':
+                    expense['created_at']?.split('T')[0] ??
+                    DateTime.now().toIso8601String().split('T')[0],
+                'description': expense['description'] ?? '',
+                'paymentMethod': 'Espèces', // Par défaut
+                'status': 'Payé', // Par défaut
+                'agency_id': expense['agency_id'],
+                'user_id': expense['user_id'],
+              };
+            }).toList();
+            _isLoading = false;
+          });
+          _calculateTotalExpenses();
+        } else {
+          setState(() {
+            _errorMessage =
+                jsonResponse['message'] ?? 'Erreur lors du chargement';
+            _isLoading = false;
+          });
+        }
+      } else if (response.statusCode == 401) {
+        setState(() {
+          _errorMessage = 'Session expirée. Veuillez vous reconnecter.';
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _errorMessage = 'Erreur serveur: ${response.statusCode}';
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Erreur de connexion: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _addExpense() async {
+    if (_addNameController.text.isEmpty) {
+      _showMessage('Veuillez saisir le nom de la dépense');
+      return;
+    }
+
+    if (_addAmountController.text.isEmpty) {
+      _showMessage('Veuillez saisir le montant');
+      return;
+    }
+
+    if (_selectedAgency == null) {
+      _showMessage('Veuillez sélectionner une agence');
+      return;
+    }
+
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+
+      if (token == null) {
+        _showMessage('Utilisateur non connecté');
+        return;
+      }
+
+      final expenseData = {
+        'agency_id': _selectedAgency!['id'].toString(),
+        'name': _addNameController.text,
+        'amount': double.parse(_addAmountController.text),
+        'description': _addDescriptionController.text,
+      };
+
+      final response = await http.post(
+        Uri.parse('http://localhost:8000/api/expenses'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(expenseData),
+      );
+
+      if (response.statusCode == 201) {
+        final jsonResponse = json.decode(response.body);
+
+        if (jsonResponse['success']) {
+          // Ajouter la nouvelle dépense à la liste
+          final newExpense = jsonResponse['data'];
+          setState(() {
+            _expenses.insert(0, {
+              'id': newExpense['id'],
+              'category': _selectedCategory,
+              'name': newExpense['name'],
+              'amount': double.parse(newExpense['amount'].toString()),
+              'date':
+                  newExpense['created_at']?.split('T')[0] ??
+                  DateTime.now().toIso8601String().split('T')[0],
+              'description': newExpense['description'] ?? '',
+              'paymentMethod': 'Espèces',
+              'status': 'Payé',
+              'agency_id': newExpense['agency_id'],
+              'user_id': newExpense['user_id'],
+            });
+          });
+
+          _calculateTotalExpenses();
+          _clearAddForm();
+          Navigator.pop(context);
+          _showMessage('Dépense ajoutée avec succès');
+        } else {
+          _showMessage(jsonResponse['message'] ?? 'Erreur lors de l\'ajout');
+        }
+      } else if (response.statusCode == 422) {
+        final jsonResponse = json.decode(response.body);
+        final errors = jsonResponse['errors'];
+        final errorMessage =
+            errors.values.first?.first ?? 'Erreur de validation';
+        _showMessage(errorMessage);
+      } else {
+        _showMessage('Erreur serveur: ${response.statusCode}');
+      }
+    } catch (e) {
+      _showMessage('Erreur: $e');
+    }
+  }
+
+  Future<void> _updateExpense() async {
+    if (_editNameController.text.isEmpty) {
+      _showMessage('Veuillez saisir le nom de la dépense');
+      return;
+    }
+
+    if (_editAmountController.text.isEmpty) {
+      _showMessage('Veuillez saisir le montant');
+      return;
+    }
+
+    if (_editingExpenseId == null) {
+      _showMessage('Erreur: ID de dépense manquant');
+      return;
+    }
+
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+
+      if (token == null) {
+        _showMessage('Utilisateur non connecté');
+        return;
+      }
+
+      final expenseData = {
+        'name': _editNameController.text,
+        'amount': double.parse(_editAmountController.text),
+        'description': _editDescriptionController.text,
+      };
+
+      final response = await http.put(
+        Uri.parse('http://localhost:8000/api/expenses/$_editingExpenseId'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(expenseData),
+      );
+
+      if (response.statusCode == 200) {
+        final jsonResponse = json.decode(response.body);
+
+        if (jsonResponse['success']) {
+          // Mettre à jour la dépense dans la liste
+          final updatedExpense = jsonResponse['data'];
+          final index = _expenses.indexWhere(
+            (expense) => expense['id'] == _editingExpenseId,
+          );
+
+          if (index != -1) {
+            setState(() {
+              _expenses[index] = {
+                'id': updatedExpense['id'],
+                'category': _editSelectedCategory,
+                'name': updatedExpense['name'],
+                'amount': double.parse(updatedExpense['amount'].toString()),
+                'date':
+                    updatedExpense['updated_at']?.split('T')[0] ??
+                    _expenses[index]['date'],
+                'description': updatedExpense['description'] ?? '',
+                'paymentMethod': _expenses[index]['paymentMethod'],
+                'status': _expenses[index]['status'],
+                'agency_id': updatedExpense['agency_id'],
+                'user_id': updatedExpense['user_id'],
+              };
+            });
+          }
+
+          _calculateTotalExpenses();
+          _clearEditForm();
+          Navigator.pop(context);
+          _showMessage('Dépense modifiée avec succès');
+        } else {
+          _showMessage(
+            jsonResponse['message'] ?? 'Erreur lors de la modification',
+          );
+        }
+      } else if (response.statusCode == 422) {
+        final jsonResponse = json.decode(response.body);
+        final errors = jsonResponse['errors'];
+        final errorMessage =
+            errors.values.first?.first ?? 'Erreur de validation';
+        _showMessage(errorMessage);
+      } else {
+        _showMessage('Erreur serveur: ${response.statusCode}');
+      }
+    } catch (e) {
+      _showMessage('Erreur: $e');
+    }
+  }
+
+  Future<void> _deleteExpense(int id, String name) async {
+    final confirmed = await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Supprimer la dépense'),
+        content: Text(
+          'Êtes-vous sûr de vouloir supprimer la dépense "$name" ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('Supprimer', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        final SharedPreferences prefs = await SharedPreferences.getInstance();
+        final token = prefs.getString('auth_token');
+
+        if (token == null) {
+          _showMessage('Utilisateur non connecté');
+          return;
+        }
+
+        final response = await http.delete(
+          Uri.parse('http://localhost:8000/api/expenses/$id'),
+          headers: {'Authorization': 'Bearer $token'},
+        );
+
+        if (response.statusCode == 200) {
+          final jsonResponse = json.decode(response.body);
+
+          if (jsonResponse['success']) {
+            setState(() {
+              _expenses.removeWhere((expense) => expense['id'] == id);
+            });
+            _calculateTotalExpenses();
+            _showMessage('Dépense supprimée avec succès');
+          } else {
+            _showMessage(
+              jsonResponse['message'] ?? 'Erreur lors de la suppression',
+            );
+          }
+        } else {
+          _showMessage('Erreur serveur: ${response.statusCode}');
+        }
+      } catch (e) {
+        _showMessage('Erreur: $e');
+      }
+    }
   }
 
   void _calculateTotalExpenses() {
     setState(() {
       _totalExpenses = _expenses.fold(
         0.0,
-        (sum, expense) => sum + expense['amount'],
+        (sum, expense) => sum + (expense['amount'] as double),
       );
     });
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
-  }
-
-  Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
-    );
-    if (picked != null && picked != _selectedDate) {
-      setState(() {
-        _selectedDate = picked;
-        _dateController.text = _formatDate(picked);
-      });
-    }
-  }
-
-  void _addExpense() {
-    if (_amountController.text.isEmpty) {
-      _showMessage('Veuillez saisir le montant');
-      return;
-    }
-
-    final newExpense = {
-      'id': DateTime.now().millisecondsSinceEpoch.toString(),
-      'category': _selectedCategory,
-      'amount': double.parse(_amountController.text),
-      'date': _selectedDate.toIso8601String().split('T')[0],
-      'description': _descriptionController.text.isEmpty
-          ? 'Dépense ${_selectedCategory.toLowerCase()}'
-          : _descriptionController.text,
-      'paymentMethod': _selectedPaymentMethod,
-      'status': _selectedStatus,
-    };
-
-    setState(() {
-      _expenses.insert(0, newExpense);
-    });
-
-    _calculateTotalExpenses();
-    _clearForm();
-    _showMessage('Dépense ajoutée avec succès');
-  }
-
-  void _editExpense(int index) {
-    final expense = _expenses[index];
-
-    _selectedCategory = expense['category'];
-    _amountController.text = expense['amount'].toString();
-    _selectedDate = DateTime.parse(expense['date']);
-    _dateController.text = _formatDate(_selectedDate);
-    _descriptionController.text = expense['description'];
-    _selectedPaymentMethod = expense['paymentMethod'];
-    _selectedStatus = expense['status'];
-
-    _showExpenseModal(context, index);
-  }
-
-  void _updateExpense(int index) {
-    if (_amountController.text.isEmpty) {
-      _showMessage('Veuillez saisir le montant');
-      return;
-    }
-
-    setState(() {
-      _expenses[index] = {
-        'id': _expenses[index]['id'],
-        'category': _selectedCategory,
-        'amount': double.parse(_amountController.text),
-        'date': _selectedDate.toIso8601String().split('T')[0],
-        'description': _descriptionController.text,
-        'paymentMethod': _selectedPaymentMethod,
-        'status': _selectedStatus,
-      };
-    });
-
-    _calculateTotalExpenses();
-    _clearForm();
-    Navigator.pop(context);
-    _showMessage('Dépense modifiée avec succès');
-  }
-
-  void _deleteExpense(int index) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Supprimer la dépense'),
-        content: Text('Êtes-vous sûr de vouloir supprimer cette dépense ?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Annuler'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _expenses.removeAt(index);
-              });
-              _calculateTotalExpenses();
-              Navigator.pop(context);
-              _showMessage('Dépense supprimée avec succès');
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryRed,
-            ),
-            child: Text('Supprimer'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _clearForm() {
-    _amountController.clear();
-    _descriptionController.clear();
-    _selectedDate = DateTime.now();
-    _dateController.text = _formatDate(_selectedDate);
+  void _clearAddForm() {
+    _addNameController.clear();
+    _addAmountController.clear();
+    _addDescriptionController.clear();
     _selectedCategory = 'Loyer';
-    _selectedPaymentMethod = 'Espèces';
-    _selectedStatus = 'Payé';
+  }
+
+  void _clearEditForm() {
+    _editNameController.clear();
+    _editAmountController.clear();
+    _editDescriptionController.clear();
+    _editSelectedCategory = 'Loyer';
+    _editingExpenseId = null;
+  }
+
+  void _prepareEditForm(int index) {
+    final expense = _expenses[index];
+    _editingExpenseId = expense['id'];
+    _editSelectedCategory = expense['category'] ?? 'Loyer';
+    _editNameController.text = expense['name'] ?? '';
+    _editAmountController.text = expense['amount'].toString();
+    _editDescriptionController.text = expense['description'] ?? '';
   }
 
   void _showMessage(String message) {
@@ -230,7 +432,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     );
   }
 
-  void _showExpenseModal(BuildContext context, [int? editIndex]) {
+  void _showAddExpenseModal(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -258,9 +460,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      editIndex == null
-                          ? 'Nouvelle dépense'
-                          : 'MODIFIER DÉPENSE',
+                      'Nouvelle dépense',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 18,
@@ -279,6 +479,30 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 child: SingleChildScrollView(
                   child: Column(
                     children: [
+                      if (_selectedAgency != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Container(
+                            padding: EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.business, color: Colors.blue),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Agence: ${_selectedAgency!['name']}',
+                                  style: TextStyle(
+                                    color: Colors.blue,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       DropdownButtonFormField<String>(
                         value: _selectedCategory,
                         decoration: InputDecoration(
@@ -301,9 +525,23 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                       ),
                       SizedBox(height: 12),
                       TextFormField(
-                        controller: _amountController,
+                        controller: _addNameController,
                         decoration: InputDecoration(
-                          labelText: 'Montant (DH)',
+                          labelText: 'Nom de la dépense *',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          prefixIcon: Icon(
+                            Icons.receipt,
+                            color: AppTheme.primaryRed,
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: 12),
+                      TextFormField(
+                        controller: _addAmountController,
+                        decoration: InputDecoration(
+                          labelText: 'Montant (DH) *',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -312,27 +550,13 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                             color: AppTheme.primaryRed,
                           ),
                         ),
-                        keyboardType: TextInputType.number,
-                      ),
-                      SizedBox(height: 12),
-                      TextFormField(
-                        controller: _dateController,
-                        decoration: InputDecoration(
-                          labelText: 'Date',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          prefixIcon: Icon(
-                            Icons.calendar_today,
-                            color: AppTheme.primaryRed,
-                          ),
+                        keyboardType: TextInputType.numberWithOptions(
+                          decimal: true,
                         ),
-                        readOnly: true,
-                        onTap: () => _selectDate(context),
                       ),
                       SizedBox(height: 12),
                       TextFormField(
-                        controller: _descriptionController,
+                        controller: _addDescriptionController,
                         decoration: InputDecoration(
                           labelText: 'Description',
                           border: OutlineInputBorder(
@@ -345,56 +569,12 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         ),
                         maxLines: 3,
                       ),
-                      SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: _selectedPaymentMethod,
-                        decoration: InputDecoration(
-                          labelText: 'Méthode de paiement',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: _paymentMethods.map((method) {
-                          return DropdownMenuItem(
-                            value: method,
-                            child: Text(method),
-                          );
-                        }).toList(),
-                        onChanged: (method) {
-                          setState(() {
-                            _selectedPaymentMethod = method!;
-                          });
-                        },
-                      ),
-                      SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: _selectedStatus,
-                        decoration: InputDecoration(
-                          labelText: 'Statut',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: ['Payé', 'En attente', 'Annulé'].map((status) {
-                          return DropdownMenuItem(
-                            value: status,
-                            child: Text(status),
-                          );
-                        }).toList(),
-                        onChanged: (status) {
-                          setState(() {
-                            _selectedStatus = status!;
-                          });
-                        },
-                      ),
                       SizedBox(height: 20),
                       SizedBox(
                         width: double.infinity,
                         height: 50,
                         child: ElevatedButton(
-                          onPressed: editIndex == null
-                              ? _addExpense
-                              : () => _updateExpense(editIndex),
+                          onPressed: _addExpense,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppTheme.primaryRed,
                             foregroundColor: Colors.white,
@@ -403,9 +583,155 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                             ),
                           ),
                           child: Text(
-                            editIndex == null
-                                ? 'Ajouter dépense'
-                                : 'MODIFIER DÉPENSE',
+                            'Ajouter la dépense',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showEditExpenseModal(BuildContext context, int index) {
+    _prepareEditForm(index);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.85,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.orange,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Modifier dépense',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 16),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      DropdownButtonFormField<String>(
+                        value: _editSelectedCategory,
+                        decoration: InputDecoration(
+                          labelText: 'Catégorie',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        items: _categories.map((category) {
+                          return DropdownMenuItem(
+                            value: category,
+                            child: Text(category),
+                          );
+                        }).toList(),
+                        onChanged: (category) {
+                          setState(() {
+                            _editSelectedCategory = category!;
+                          });
+                        },
+                      ),
+                      SizedBox(height: 12),
+                      TextFormField(
+                        controller: _editNameController,
+                        decoration: InputDecoration(
+                          labelText: 'Nom de la dépense *',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          prefixIcon: Icon(
+                            Icons.receipt,
+                            color: AppTheme.primaryRed,
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: 12),
+                      TextFormField(
+                        controller: _editAmountController,
+                        decoration: InputDecoration(
+                          labelText: 'Montant (DH) *',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          prefixIcon: Icon(
+                            Icons.attach_money,
+                            color: AppTheme.primaryRed,
+                          ),
+                        ),
+                        keyboardType: TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                      ),
+                      SizedBox(height: 12),
+                      TextFormField(
+                        controller: _editDescriptionController,
+                        decoration: InputDecoration(
+                          labelText: 'Description',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          prefixIcon: Icon(
+                            Icons.description,
+                            color: AppTheme.primaryRed,
+                          ),
+                        ),
+                        maxLines: 3,
+                      ),
+                      SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: _updateExpense,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            'Modifier la dépense',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -438,7 +764,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    expense['category'],
+                    expense['name'] ?? expense['category'],
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -472,19 +798,24 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   ],
                   onSelected: (value) {
                     if (value == 'edit') {
-                      _editExpense(index);
+                      _showEditExpenseModal(context, index);
                     } else if (value == 'delete') {
-                      _deleteExpense(index);
+                      _deleteExpense(
+                        expense['id'],
+                        expense['name'] ?? expense['category'],
+                      );
                     }
                   },
                 ),
               ],
             ),
             SizedBox(height: 8),
-            Text(
-              expense['description'],
-              style: TextStyle(color: AppTheme.textLight),
-            ),
+            if (expense['description'] != null &&
+                expense['description'].isNotEmpty)
+              Text(
+                expense['description'],
+                style: TextStyle(color: AppTheme.textLight),
+              ),
             SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -523,11 +854,11 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Paiement',
+                      'Catégorie',
                       style: TextStyle(fontSize: 12, color: AppTheme.textLight),
                     ),
                     Text(
-                      expense['paymentMethod'],
+                      expense['category'],
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ],
@@ -576,14 +907,54 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       appBar: _buildModernAppBar(),
       bottomNavigationBar: _buildBottomNavBar(),
       drawer: _buildSidebar(),
-      body: _buildBody(),
+      body: _isLoading
+          ? _buildLoadingIndicator()
+          : _errorMessage.isNotEmpty
+          ? _buildErrorWidget()
+          : _buildBody(),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          _clearForm();
-          _showExpenseModal(context);
+          _clearAddForm();
+          _showAddExpenseModal(context);
         },
         backgroundColor: AppTheme.primaryRed,
         child: Icon(Icons.add, color: Colors.white, size: 30),
+      ),
+    );
+  }
+
+  Widget _buildLoadingIndicator() {
+    return Center(
+      child: CircularProgressIndicator(
+        valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryRed),
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, color: Colors.red, size: 50),
+            SizedBox(height: 16),
+            Text(
+              _errorMessage,
+              style: TextStyle(color: AppTheme.textDark, fontSize: 16),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _loadExpenses,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryRed,
+              ),
+              child: Text('Réessayer'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -653,19 +1024,39 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     ],
                   ),
                 ),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withOpacity(0.3)),
-                  ),
-                  child: IconButton(
-                    icon: Icon(
-                      Icons.notifications_rounded,
-                      color: Colors.white,
+                Row(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.3),
+                        ),
+                      ),
+                      child: IconButton(
+                        icon: Icon(Icons.refresh, color: Colors.white),
+                        onPressed: _loadExpenses,
+                      ),
                     ),
-                    onPressed: _showNotifications,
-                  ),
+                    SizedBox(width: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.3),
+                        ),
+                      ),
+                      child: IconButton(
+                        icon: Icon(
+                          Icons.notifications_rounded,
+                          color: Colors.white,
+                        ),
+                        onPressed: _showNotifications,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -682,11 +1073,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Cartes de statistiques - CORRIGÉ
             _buildStatsCards(),
             SizedBox(height: 20),
-
-            // En-tête de la liste
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -705,8 +1093,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               ],
             ),
             SizedBox(height: 16),
-
-            // Liste des dépenses
             _expenses.isEmpty
                 ? _buildEmptyState()
                 : Column(
@@ -735,7 +1121,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       children: [
         Row(
           children: [
-            // Carte total dépenses - CORRIGÉ
             Expanded(
               child: Card(
                 elevation: 4,
@@ -752,7 +1137,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                             color: Colors.white,
                             size: 20,
                           ),
-                          SizedBox(width: 4), // Réduit l'espacement
+                          SizedBox(width: 4),
                           Expanded(
                             child: Text(
                               'Dépenses',
@@ -771,7 +1156,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         '${_totalExpenses.toStringAsFixed(2)} DH',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 18, // Taille réduite
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -781,8 +1166,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               ),
             ),
             SizedBox(width: 12),
-
-            // Carte budget restant - CORRIGÉ
             Expanded(
               child: Card(
                 elevation: 4,
@@ -799,7 +1182,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                             color: Colors.white,
                             size: 20,
                           ),
-                          SizedBox(width: 4), // Réduit l'espacement
+                          SizedBox(width: 4),
                           Expanded(
                             child: Text(
                               'Budget',
@@ -818,7 +1201,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         '${remainingBudget.toStringAsFixed(2)} DH',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 18, // Taille réduite
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -836,7 +1219,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           ],
         ),
         SizedBox(height: 12),
-        // Carte pourcentage budget
         Card(
           elevation: 4,
           color: Colors.blue,
@@ -893,7 +1275,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     );
   }
 
-  // BOTTOM NAVBAR
+  // BOTTOM NAVBAR (inchangé)
   Widget _buildBottomNavBar() {
     return Container(
       decoration: BoxDecoration(
@@ -999,7 +1381,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     );
   }
 
-  // SIDEBAR
+  // SIDEBAR (inchangé)
   Widget _buildSidebar() {
     return Drawer(
       child: Column(

@@ -35,7 +35,9 @@ class ProductCard extends StatelessWidget {
                       color: AppTheme.background, // Utilisation de background
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: product['image'] == null || product['image'].isEmpty
+                    child:
+                        product['image_url'] == null ||
+                            product['image_url'].isEmpty
                         ? Icon(
                             Icons.inventory_2_outlined,
                             color:
@@ -45,7 +47,7 @@ class ProductCard extends StatelessWidget {
                         : ClipRRect(
                             borderRadius: BorderRadius.circular(12),
                             child: Image.network(
-                              product['image'],
+                              product['image_url'],
                               fit: BoxFit.cover,
                               errorBuilder: (context, error, stackTrace) {
                                 return Icon(

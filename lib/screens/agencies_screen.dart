@@ -6,6 +6,8 @@ import '../screens/categories_screen.dart';
 import '../screens/clients_screen.dart';
 import '../screens/suppliers_screen.dart';
 import '../screens/units_screen.dart';
+import '../services/agency_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AgenciesScreen extends StatefulWidget {
   @override
@@ -13,72 +15,134 @@ class AgenciesScreen extends StatefulWidget {
 }
 
 class _AgenciesScreenState extends State<AgenciesScreen> {
-  final List<Map<String, dynamic>> _agencies = [
-    {
-      'id': '1',
-      'name': 'Agence Principale',
-      'address': '123 Rue Commerce, Casablanca',
-      'phone': '+212 5 22 123 456',
-      'manager': 'Ahmed Benali',
-      'status': 'active',
-      'image': '',
-    },
-    {
-      'id': '2',
-      'name': 'Agence Secondaire',
-      'address': '456 Avenue Mohammed V, Rabat',
-      'phone': '+212 5 37 789 012',
-      'manager': 'Fatima Zahra',
-      'status': 'active',
-      'image': '',
-    },
-  ];
+  List<dynamic> _agencies = [];
+  bool _isLoading = true;
+  String _errorMessage = '';
+  String _searchQuery = '';
 
-  int _currentIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  // Service
+  final AgencyService _agencyService = AgencyService();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAgencies();
+  }
+
+  // Charger les agences
+  Future<void> _loadAgencies() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
+    try {
+      final agencies = await _agencyService.getAllAgencies();
+      setState(() {
+        _agencies = agencies;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+      });
+      print('Erreur: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Rafraîchir les données
+  Future<void> _refreshData() async {
+    await _loadAgencies();
+  }
+
+  // Filtrer les agences par recherche
+  List<dynamic> get _filteredAgencies {
+    if (_searchQuery.isEmpty) {
+      return _agencies;
+    }
+    return _agencies.where((agency) {
+      final name = agency['name']?.toString().toLowerCase() ?? '';
+      final address = agency['address']?.toString().toLowerCase() ?? '';
+      final manager = agency['manager']?.toString().toLowerCase() ?? '';
+      final phone = agency['phone']?.toString().toLowerCase() ?? '';
+      final query = _searchQuery.toLowerCase();
+
+      return name.contains(query) ||
+          address.contains(query) ||
+          manager.contains(query) ||
+          phone.contains(query);
+    }).toList();
+  }
+
+  // Supprimer une agence
+  Future<void> _deleteAgency(int id, String name) async {
+    final confirmed = await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Confirmer la suppression'),
+        content: Text('Voulez-vous vraiment supprimer l\'agence "$name" ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('Supprimer', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await _agencyService.deleteAgency(id);
+        // Supprimer de la liste locale
+        setState(() {
+          _agencies.removeWhere((agency) => agency['id'] == id);
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Agence supprimée avec succès'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  // Méthode pour vérifier si l'utilisateur est connecté
+  Future<bool> _checkIfLoggedIn() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token');
+    return token != null && token.isNotEmpty;
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       key: _scaffoldKey,
       appBar: _buildModernAppBar(),
-      bottomNavigationBar: _buildBottomNavBar(),
       drawer: _buildSidebar(),
-      body: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // Header Stats
-            _buildStatsHeader(),
-            SizedBox(height: 20),
-
-            // Search Bar
-            TextField(
-              decoration: InputDecoration(
-                hintText: 'Rechercher une agence...',
-                prefixIcon: Icon(Icons.search, color: AppTheme.primaryRed),
-                filled: true,
-                fillColor: AppTheme.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
+      body: _isLoading
+          ? _buildLoadingIndicator()
+          : _errorMessage.isNotEmpty
+          ? _buildErrorWidget()
+          : RefreshIndicator(
+              onRefresh: _refreshData,
+              color: AppTheme.primaryRed,
+              child: _buildMainContent(),
             ),
-            SizedBox(height: 20),
-
-            // Agencies List
-            Expanded(
-              child: ListView.builder(
-                itemCount: _agencies.length,
-                itemBuilder: (context, index) {
-                  return AgencyCard(agency: _agencies[index]);
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppTheme.primaryRed,
         onPressed: _addAgency,
@@ -87,7 +151,194 @@ class _AgenciesScreenState extends State<AgenciesScreen> {
     );
   }
 
-  // HEADER MODERNE
+  Widget _buildMainContent() {
+    return Padding(
+      padding: EdgeInsets.all(16),
+      child: Column(
+        children: [
+          // Header Stats
+          _buildStatsHeader(),
+          SizedBox(height: 20),
+
+          // Search Bar
+          TextField(
+            onChanged: (value) {
+              setState(() {
+                _searchQuery = value;
+              });
+            },
+            decoration: InputDecoration(
+              hintText: 'Rechercher une agence...',
+              prefixIcon: Icon(Icons.search, color: AppTheme.primaryRed),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(Icons.clear, color: AppTheme.primaryRed),
+                      onPressed: () {
+                        setState(() {
+                          _searchQuery = '';
+                        });
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: AppTheme.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          SizedBox(height: 20),
+
+          // Message si pas d'agences
+          if (_filteredAgencies.isEmpty)
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      _searchQuery.isEmpty
+                          ? Icons.business_outlined
+                          : Icons.search_off,
+                      size: 64,
+                      color: AppTheme.textLight,
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      _searchQuery.isEmpty
+                          ? 'Aucune agence trouvée'
+                          : 'Aucune agence correspondant à "$_searchQuery"',
+                      style: TextStyle(color: AppTheme.textLight, fontSize: 16),
+                    ),
+                    if (_searchQuery.isEmpty)
+                      Padding(
+                        padding: EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Ajoutez votre première agence en cliquant sur le bouton +',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: AppTheme.textLight,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            )
+          else
+            // Agencies List
+            Expanded(
+              child: ListView.builder(
+                itemCount: _filteredAgencies.length,
+                itemBuilder: (context, index) {
+                  final agency = _filteredAgencies[index];
+                  return AgencyCard(
+                    agency: agency,
+                    //    onDelete: () => _deleteAgency(agency['id'], agency['name']),
+                    //   onEdit: () => _editAgency(agency),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingIndicator() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(color: AppTheme.primaryRed),
+          SizedBox(height: 20),
+          Text(
+            'Chargement des agences...',
+            style: TextStyle(color: AppTheme.textDark, fontSize: 16),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, color: AppTheme.primaryRed, size: 64),
+            SizedBox(height: 20),
+            Text(
+              'Erreur de chargement',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textDark,
+              ),
+            ),
+            SizedBox(height: 10),
+            Text(
+              _errorMessage,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppTheme.textLight),
+            ),
+            SizedBox(height: 20),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryRed,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              onPressed: _loadAgencies,
+              child: Text('Réessayer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatsHeader() {
+    return Container(
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryRed.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildStatItem(_agencies.length.toString(), 'Agences'),
+          _buildStatItem('${_agencies.length * 620}', 'Ventes/mois'),
+          _buildStatItem('${_agencies.length * 620 * 37} DH', 'CA Total'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(String value, String label) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.primaryRed,
+          ),
+        ),
+        SizedBox(height: 4),
+        Text(label, style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
+      ],
+    );
+  }
+
+  // HEADER MODERNE (identique à votre code)
   PreferredSizeWidget _buildModernAppBar() {
     return PreferredSize(
       preferredSize: Size.fromHeight(100),
@@ -143,7 +394,7 @@ class _AgenciesScreenState extends State<AgenciesScreen> {
                       ),
                       SizedBox(height: 4),
                       Text(
-                        'Gérez vos agences et succursales',
+                        '${_agencies.length} agences gérées',
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.8),
                           fontSize: 12,
@@ -163,8 +414,8 @@ class _AgenciesScreenState extends State<AgenciesScreen> {
                         ),
                       ),
                       child: IconButton(
-                        icon: Icon(Icons.search_rounded, color: Colors.white),
-                        onPressed: () {},
+                        icon: Icon(Icons.refresh_rounded, color: Colors.white),
+                        onPressed: _refreshData,
                       ),
                     ),
                     SizedBox(width: 8),
@@ -226,100 +477,31 @@ class _AgenciesScreenState extends State<AgenciesScreen> {
     );
   }
 
-  // BOTTOM NAVBAR
-  Widget _buildBottomNavBar() {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, -2),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (index) => setState(() => _currentIndex = index),
-          backgroundColor: Colors.white,
-          selectedItemColor: AppTheme.primaryRed,
-          unselectedItemColor: Color(0xFF9E9E9E),
-          selectedLabelStyle: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-          unselectedLabelStyle: TextStyle(fontSize: 11),
-          type: BottomNavigationBarType.fixed,
-          elevation: 8,
-          items: [
-            BottomNavigationBarItem(
-              icon: Container(
-                padding: EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: _currentIndex == 0
-                      ? AppTheme.primaryRed.withOpacity(0.1)
-                      : Colors.transparent,
-                ),
-                child: Icon(Icons.home_rounded, size: 24),
-              ),
-              label: 'Accueil',
-            ),
-            BottomNavigationBarItem(
-              icon: Container(
-                padding: EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: _currentIndex == 1
-                      ? AppTheme.primaryRed.withOpacity(0.1)
-                      : Colors.transparent,
-                ),
-                child: Icon(Icons.inventory_2_rounded, size: 24),
-              ),
-              label: 'Produits',
-            ),
-            BottomNavigationBarItem(
-              icon: Container(
-                padding: EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: _currentIndex == 2
-                      ? AppTheme.primaryRed.withOpacity(0.1)
-                      : Colors.transparent,
-                ),
-                child: Icon(Icons.analytics_rounded, size: 24),
-              ),
-              label: 'Stats',
-            ),
-            BottomNavigationBarItem(
-              icon: Container(
-                padding: EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: _currentIndex == 3
-                      ? AppTheme.primaryRed.withOpacity(0.1)
-                      : Colors.transparent,
-                ),
-                child: Icon(Icons.person_rounded, size: 24),
-              ),
-              label: 'Profil',
-            ),
-          ],
-        ),
-      ),
-    );
+  void _addAgency() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => AddAgencyScreen()),
+    ).then((newAgency) {
+      if (newAgency != null) {
+        // Rafraîchir la liste après ajout
+        _loadAgencies();
+      }
+    });
   }
 
-  // SIDEBAR
+  // void _editAgency(Map<String, dynamic> agency) {
+  //   Navigator.push(
+  //  context,
+  //   MaterialPageRoute(builder: (context) => AddAgencyScreen(agency: agency)),
+  //   ).then((updatedAgency) {
+  //     if (updatedAgency != null) {
+  // Rafraîchir la liste après modification
+  //     _loadAgencies();
+  //    }
+  //  });
+  // }
+
+  // SIDEBAR (identique à votre code)
   Widget _buildSidebar() {
     return Drawer(
       child: SafeArea(
@@ -399,11 +581,9 @@ class _AgenciesScreenState extends State<AgenciesScreen> {
                 children: [
                   _buildSidebarItem(Icons.dashboard, 'Tableau de bord', () {
                     Navigator.pop(context);
-                    // Navigator.pushReplacementNamed(context, '/dashboard');
                   }, isActive: false),
                   _buildSidebarItem(Icons.inventory_2, 'Gestion Produits', () {
                     Navigator.pop(context);
-                    // Navigator.pushNamed(context, '/products');
                   }, isActive: false),
                   _buildSidebarItem(Icons.business, 'Mes Agences', () {
                     Navigator.pop(context);
@@ -442,19 +622,15 @@ class _AgenciesScreenState extends State<AgenciesScreen> {
                   }, isActive: false),
                   _buildSidebarItem(Icons.shopping_cart, 'Ventes', () {
                     Navigator.pop(context);
-                    // Navigator.pushNamed(context, '/sales');
                   }, isActive: false),
                   _buildSidebarItem(Icons.analytics, 'Rapports', () {
                     Navigator.pop(context);
-                    // Navigator.pushNamed(context, '/reports');
                   }, isActive: false),
                   _buildSidebarItem(Icons.settings, 'Paramètres', () {
                     Navigator.pop(context);
-                    // Navigator.pushNamed(context, '/settings');
                   }, isActive: false),
                   _buildSidebarItem(Icons.receipt, 'Factures', () {
                     Navigator.pop(context);
-                    // Navigator.pushNamed(context, '/invoices');
                   }, isActive: false),
 
                   Divider(height: 20, indent: 20, endIndent: 20),
@@ -525,9 +701,14 @@ class _AgenciesScreenState extends State<AgenciesScreen> {
             child: Text('Annuler'),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // Navigator.pushReplacementNamed(context, '/login');
+            onPressed: () async {
+              // Logout logic
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove('auth_token');
+              await prefs.remove('user');
+
+              Navigator.pop(context); // Fermer la boîte de dialogue
+              Navigator.pushReplacementNamed(context, '/login');
             },
             child: Text(
               'Déconnexion',
@@ -553,61 +734,5 @@ class _AgenciesScreenState extends State<AgenciesScreen> {
         ],
       ),
     );
-  }
-
-  Widget _buildStatsHeader() {
-    return Container(
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.primaryRed.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildStatItem('2', 'Agences'),
-          _buildStatItem('1,240', 'Ventes/mois'),
-          _buildStatItem('45,800 DH', 'CA Total'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatItem(String value, String label) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: AppTheme.primaryRed,
-          ),
-        ),
-        SizedBox(height: 4),
-        Text(label, style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
-      ],
-    );
-  }
-
-  void _addAgency() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => AddAgencyScreen()),
-    ).then((result) {
-      if (result != null) {
-        // Gérer le résultat (ajout ou modification d'agence)
-        if (result is Map<String, dynamic>) {
-          if (result.containsKey('delete')) {
-            // Supprimer l'agence
-          } else {
-            // Ajouter ou modifier l'agence
-            setState(() {
-              _agencies.add(result);
-            });
-          }
-        }
-      }
-    });
   }
 }
