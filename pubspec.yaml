@@ -41,6 +41,7 @@ dependencies:
   flutter_dotenv: ^5.1.0
   mapbox_maps_flutter: ^2.3.0
   mapbox_search: ^4.1.0
+  intl: ^0.20.2
 
 
 

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:multi_agences_app/screens/add_product_screen.dart';
+import 'package:multi_agences_app/screens/agencies_screen.dart';
 import 'package:multi_agences_app/screens/categories_screen.dart';
 import 'package:multi_agences_app/screens/clients_screen.dart';
+import 'package:multi_agences_app/screens/dashboard_screen.dart';
+import 'package:multi_agences_app/screens/expenses_screen.dart';
 import 'package:multi_agences_app/screens/suppliers_screen.dart';
 import 'package:multi_agences_app/screens/units_screen.dart';
 import '../theme/app_theme.dart';
@@ -148,6 +151,81 @@ class _ProductsScreenState extends State<ProductsScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _deleteProduct(int productId, String productName) async {
+    final confirmed = await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Supprimer le produit'),
+        content: Text(
+          'Êtes-vous sûr de vouloir supprimer le produit "$productName" ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('Supprimer', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        final SharedPreferences prefs = await SharedPreferences.getInstance();
+        final token = prefs.getString('auth_token');
+
+        if (token == null) {
+          _showMessage('Utilisateur non connecté');
+          return;
+        }
+
+        final response = await http.delete(
+          Uri.parse('http://localhost:8000/api/products/$productId'),
+          headers: {'Authorization': 'Bearer $token'},
+        );
+
+        if (response.statusCode == 200) {
+          final jsonResponse = json.decode(response.body);
+
+          if (jsonResponse['success']) {
+            setState(() {
+              _products.removeWhere(
+                (product) => product['id'] == productId.toString(),
+              );
+            });
+            _showMessage('Produit supprimé avec succès');
+          } else {
+            _showMessage(
+              jsonResponse['message'] ?? 'Erreur lors de la suppression',
+            );
+          }
+        } else if (response.statusCode == 403) {
+          _showMessage('Vous n\'êtes pas autorisé à supprimer ce produit');
+        } else if (response.statusCode == 404) {
+          _showMessage('Produit non trouvé');
+        } else {
+          _showMessage('Erreur serveur: ${response.statusCode}');
+        }
+      } catch (e) {
+        _showMessage('Erreur: $e');
+      }
+    }
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: message.contains('succès')
+            ? Colors.green
+            : AppTheme.primaryRed,
+      ),
+    );
   }
 
   List<Map<String, dynamic>> get _filteredProducts {
@@ -445,7 +523,20 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       ),
                       itemCount: _filteredProducts.length,
                       itemBuilder: (context, index) {
-                        return ProductCard(product: _filteredProducts[index]);
+                        final product = _filteredProducts[index];
+                        return ProductCard(
+                          product: product,
+                          onEdit: () {
+                            // TODO: Implémenter l'édition
+                            _showMessage('Modification en développement');
+                          },
+                          onDelete: () async {
+                            await _deleteProduct(
+                              int.parse(product['id']),
+                              product['name'],
+                            );
+                          },
+                        );
                       },
                     ),
             ),
@@ -758,7 +849,22 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 children: [
                   _buildSidebarItem(Icons.dashboard, 'Tableau de bord', () {
                     Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => DashboardScreen(),
+                      ),
+                    );
                   }, isActive: false),
+
+                  _buildSidebarItem(Icons.business, 'Mes Agences', () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => AgenciesScreen()),
+                    );
+                  }, isActive: false),
+
                   _buildSidebarItem(Icons.inventory_2, 'Gestion Produits', () {
                     Navigator.pop(context);
                   }, isActive: true),
@@ -778,6 +884,15 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       MaterialPageRoute(builder: (context) => UnitsScreen()),
                     );
                   }, isActive: false),
+                  _buildSidebarItem(Icons.local_shipping, 'Fournisseurs', () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => SuppliersScreen(),
+                      ),
+                    );
+                  }, isActive: false),
                   _buildSidebarItem(Icons.people, 'Clients', () {
                     Navigator.pop(context);
                     Navigator.push(
@@ -788,31 +903,38 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   _buildSidebarItem(Icons.shopping_cart, 'Ventes', () {
                     Navigator.pop(context);
                   }, isActive: false),
-                  _buildSidebarItem(Icons.analytics, 'Rapports', () {
+                  _buildSidebarItem(Icons.shopping_cart, 'Achats', () {
                     Navigator.pop(context);
                   }, isActive: false),
-                  _buildSidebarItem(Icons.settings, 'Paramètres', () {
-                    Navigator.pop(context);
-                  }, isActive: false),
-                  _buildSidebarItem(Icons.receipt, 'Factures', () {
-                    Navigator.pop(context);
-                  }, isActive: false),
-                  _buildSidebarItem(Icons.local_shipping, 'Fournisseurs', () {
+
+                  _buildSidebarItem(
+                    Icons.attach_money,
+                    'Caisse & Trésorerie',
+                    () {
+                      Navigator.pop(context);
+                    },
+                    isActive: false,
+                  ),
+
+                  _buildSidebarItem(Icons.people, 'Dépenses', () {
                     Navigator.pop(context);
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
-                        builder: (context) => SuppliersScreen(),
-                      ),
+                      MaterialPageRoute(builder: (context) => ExpensesScreen()),
                     );
+                  }, isActive: false),
+
+                  _buildSidebarItem(Icons.receipt, 'Factures', () {
+                    Navigator.pop(context);
+                  }, isActive: false),
+
+                  _buildSidebarItem(Icons.analytics, 'Rapports', () {
+                    Navigator.pop(context);
                   }, isActive: false),
 
                   Divider(height: 20, indent: 20, endIndent: 20),
 
                   _buildSidebarItem(Icons.help, 'Aide & Support', () {
-                    Navigator.pop(context);
-                  }, isActive: false),
-                  _buildSidebarItem(Icons.info, 'À propos', () {
                     Navigator.pop(context);
                   }, isActive: false),
                   _buildSidebarItem(Icons.logout, 'Déconnexion', () {

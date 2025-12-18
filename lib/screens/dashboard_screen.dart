@@ -4,6 +4,7 @@ import 'package:multi_agences_app/screens/clients_screen.dart';
 import 'package:multi_agences_app/screens/expenses_screen.dart';
 import 'package:multi_agences_app/screens/invoicing_screen.dart';
 import 'package:multi_agences_app/screens/purchase_screen.dart';
+import 'package:multi_agences_app/screens/purchases_list_screen.dart';
 import 'package:multi_agences_app/screens/reports_screen.dart';
 import 'package:multi_agences_app/screens/sales_screen.dart';
 import 'package:multi_agences_app/screens/settings_screen.dart';
@@ -697,7 +698,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             CashRegisterScreen(),
           ),
           _buildDrawerItem(Icons.business, 'Mes ventes', SalesScreen()),
-          _buildDrawerItem(Icons.business, 'Mes achats', PurchaseScreen()),
+          _buildDrawerItem(
+            Icons.business,
+            'Mes achats',
+            PurchasesHistoryScreen(),
+          ),
           _buildDrawerItem(Icons.business, 'Dépenses', ExpensesScreen()),
           _buildDrawerItem(Icons.bar_chart, 'Rapports', ReportsScreen()),
           _buildDrawerItem(Icons.receipt, 'Facturation', InvoicingScreen()),

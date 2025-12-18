@@ -3,167 +3,230 @@ import '../theme/app_theme.dart';
 
 class ProductCard extends StatelessWidget {
   final Map<String, dynamic> product;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
-  const ProductCard({Key? key, required this.product}) : super(key: key);
+  const ProductCard({
+    Key? key,
+    required this.product,
+    this.onEdit,
+    this.onDelete,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    bool isLowStock = (product['stock'] ?? 0) <= (product['alertStock'] ?? 0);
+    final isLowStock = (product['stock'] ?? 0) <= (product['alertStock'] ?? 0);
+    final stockColor = isLowStock ? Colors.red : AppTheme.primaryRed;
 
     return Card(
-      elevation: 3,
+      elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: isLowStock
-              ? Border.all(color: Colors.orange.withOpacity(0.3), width: 1)
-              : null,
-        ),
-        child: Stack(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Image placeholder
-                  Container(
-                    height: 90,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: AppTheme.background, // Utilisation de background
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child:
-                        product['image_url'] == null ||
-                            product['image_url'].isEmpty
-                        ? Icon(
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Image du produit
+              Container(
+                height: 100,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
+                  ),
+                  color: AppTheme.background,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
+                  ),
+                  child:
+                      product['image_url'] != null &&
+                          product['image_url'].isNotEmpty
+                      ? Image.network(
+                          product['image_url'],
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: AppTheme.primaryRed.withOpacity(0.1),
+                              child: Icon(
+                                Icons.inventory_2_outlined,
+                                color: AppTheme.primaryRed,
+                                size: 40,
+                              ),
+                            );
+                          },
+                        )
+                      : Container(
+                          color: AppTheme.primaryRed.withOpacity(0.1),
+                          child: Icon(
                             Icons.inventory_2_outlined,
-                            color:
-                                AppTheme.textLight, // Utilisation de textLight
+                            color: AppTheme.primaryRed,
                             size: 40,
-                          )
-                        : ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.network(
-                              product['image_url'],
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Icon(
-                                  Icons.broken_image,
-                                  color: AppTheme
-                                      .textLight, // Utilisation de textLight
-                                  size: 40,
-                                );
-                              },
-                            ),
                           ),
-                  ),
-                  SizedBox(height: 8),
+                        ),
+                ),
+              ),
 
-                  // Nom du produit
-                  Text(
-                    product['name'] ?? 'Produit sans nom',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      color: AppTheme.textDark,
-                      height: 1.2,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  SizedBox(height: 4),
-
-                  // Prix
-                  Text(
-                    '${product['price']?.toStringAsFixed(2) ?? '0.00'} DH',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                      color: AppTheme.primaryRed,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-
-                  // Stock
-                  Row(
+              // Contenu de la carte
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        Icons.inventory_2,
-                        size: 12,
-                        color: AppTheme.textLight,
-                      ),
-                      SizedBox(width: 4),
+                      // Nom du produit
                       Text(
-                        'Stock: ${product['stock'] ?? 0}',
+                        product['name'] ?? 'Produit',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textDark,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: 4),
+
+                      // Catégorie
+                      Text(
+                        product['category'] ?? 'Non catégorisé',
                         style: TextStyle(
                           fontSize: 11,
                           color: AppTheme.textLight,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ],
-                  ),
-                  SizedBox(height: 2),
+                      SizedBox(height: 8),
 
-                  // Catégorie
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.category,
-                        size: 12,
-                        color: AppTheme.textLight, // Utilisation de textLight
-                      ),
-                      SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          product['category'] ?? 'Non catégorisé',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color:
-                                AppTheme.textLight, // Utilisation de textLight
+                      // Prix et informations
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${(product['price'] ?? 0.0).toStringAsFixed(2)} DH',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primaryRed,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Achat: ${(product['purchasePrice'] ?? 0.0).toStringAsFixed(2)} DH',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: AppTheme.textLight,
+                                ),
+                              ),
+                            ],
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            // Badge stock faible
-            if (isLowStock)
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.orange,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.warning, size: 10, color: Colors.white),
-                      SizedBox(width: 2),
-                      Text(
-                        'Stock faible',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 8,
-                          fontWeight: FontWeight.bold,
-                        ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                'Stock',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: AppTheme.textLight,
+                                ),
+                              ),
+                              Text(
+                                '${product['stock'] ?? 0}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: stockColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
               ),
-          ],
-        ),
+            ],
+          ),
+
+          // Badge de stock faible
+          if (isLowStock)
+            Positioned(
+              top: 8,
+              left: 8,
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Stock faible',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+
+          // Bouton d'action rapide
+          Positioned(
+            top: 8,
+            right: 8,
+            child: PopupMenuButton(
+              icon: Container(
+                padding: EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.8),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Icon(
+                  Icons.more_vert,
+                  color: AppTheme.primaryRed,
+                  size: 16,
+                ),
+              ),
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'edit',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit, size: 16, color: AppTheme.primaryRed),
+                      SizedBox(width: 8),
+                      Text('Modifier'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete, size: 16, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text('Supprimer'),
+                    ],
+                  ),
+                ),
+              ],
+              onSelected: (value) {
+                if (value == 'edit' && onEdit != null) {
+                  onEdit!();
+                } else if (value == 'delete' && onDelete != null) {
+                  onDelete!();
+                }
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

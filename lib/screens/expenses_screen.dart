@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:multi_agences_app/screens/agencies_screen.dart';
+import 'package:multi_agences_app/screens/dashboard_screen.dart';
+import 'package:multi_agences_app/screens/products_screen.dart';
+import 'package:multi_agences_app/screens/purchase_screen.dart';
+import 'package:multi_agences_app/screens/sales_screen.dart';
 import '../theme/app_theme.dart';
 import '../screens/categories_screen.dart';
 import '../screens/clients_screen.dart';
@@ -1382,115 +1387,183 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   }
 
   // SIDEBAR (inchangé)
+
   Widget _buildSidebar() {
     return Drawer(
-      child: Column(
-        children: [
-          Container(
-            height: 180,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Color(0xFFD32F2F),
-                  Color(0xFFC2185B),
-                  Color(0xFF7B1FA2),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+      child: SafeArea(
+        child: Column(
+          children: [
+            // Header du sidebar
+            Container(
+              height: 180,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Color(0xFFD32F2F),
+                    Color(0xFFC2185B),
+                    Color(0xFF7B1FA2),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircleAvatar(
+                      radius: 32,
+                      backgroundColor: Colors.white,
+                      child: Icon(
+                        Icons.person,
+                        size: 38,
+                        color: AppTheme.primaryRed,
+                      ),
+                    ),
+                    SizedBox(height: 10),
+                    Text(
+                      'Mohamed Ali',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Administrateur',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.9),
+                        fontSize: 12,
+                      ),
+                    ),
+                    SizedBox(height: 6),
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Premium',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+
+            // Menu items
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
                 children: [
-                  CircleAvatar(
-                    radius: 32,
-                    backgroundColor: Colors.white,
-                    child: Icon(
-                      Icons.person,
-                      size: 38,
-                      color: AppTheme.primaryRed,
-                    ),
+                  _buildSidebarItem(Icons.dashboard, 'Tableau de bord', () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => DashboardScreen(),
+                      ),
+                    );
+                  }, isActive: false),
+
+                  _buildSidebarItem(Icons.business, 'Mes Agences', () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => AgenciesScreen()),
+                    );
+                  }, isActive: false),
+
+                  _buildSidebarItem(Icons.inventory_2, 'Gestion Produits', () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => ProductsScreen()),
+                    );
+                  }, isActive: false),
+                  _buildSidebarItem(Icons.category, 'Catégories', () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => CategoriesScreen(),
+                      ),
+                    );
+                  }, isActive: false),
+                  _buildSidebarItem(Icons.square_foot, 'Unités', () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => UnitsScreen()),
+                    );
+                  }, isActive: false),
+                  _buildSidebarItem(Icons.local_shipping, 'Fournisseurs', () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => SuppliersScreen(),
+                      ),
+                    );
+                  }, isActive: false),
+                  _buildSidebarItem(Icons.people, 'Clients', () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => ClientsScreen()),
+                    );
+                  }, isActive: false),
+                  _buildSidebarItem(Icons.shopping_cart, 'Ventes', () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => PurchaseScreen()),
+                    );
+                  }, isActive: false),
+
+                  _buildSidebarItem(
+                    Icons.attach_money,
+                    'Caisse & Trésorerie',
+                    () {
+                      Navigator.pop(context);
+                    },
+                    isActive: false,
                   ),
-                  SizedBox(height: 10),
-                  Text(
-                    'Mohamed Ali',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'Gestionnaire',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.9),
-                      fontSize: 12,
-                    ),
-                  ),
+
+                  _buildSidebarItem(Icons.people, 'Dépenses', () {
+                    Navigator.pop(context);
+                  }, isActive: true),
+
+                  _buildSidebarItem(Icons.receipt, 'Factures', () {
+                    Navigator.pop(context);
+                  }, isActive: false),
+
+                  _buildSidebarItem(Icons.analytics, 'Rapports', () {
+                    Navigator.pop(context);
+                  }, isActive: false),
+
+                  Divider(height: 20, indent: 20, endIndent: 20),
+
+                  _buildSidebarItem(Icons.help, 'Aide & Support', () {
+                    Navigator.pop(context);
+                  }, isActive: false),
+                  _buildSidebarItem(Icons.logout, 'Déconnexion', () {
+                    Navigator.pop(context);
+                    _showLogoutDialog();
+                  }, isActive: false),
                 ],
               ),
             ),
-          ),
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: [
-                _buildSidebarItem(
-                  Icons.dashboard,
-                  'Tableau de bord',
-                  () => Navigator.pop(context),
-                  isActive: false,
-                ),
-                _buildSidebarItem(
-                  Icons.inventory_2,
-                  'Gestion Produits',
-                  () => Navigator.pop(context),
-                  isActive: false,
-                ),
-                _buildSidebarItem(
-                  Icons.business,
-                  'Mes Agences',
-                  () => Navigator.pop(context),
-                  isActive: false,
-                ),
-                _buildSidebarItem(
-                  Icons.shopping_cart,
-                  'Point de Vente',
-                  () => Navigator.pop(context),
-                  isActive: false,
-                ),
-                _buildSidebarItem(
-                  Icons.shopping_basket,
-                  'Achats',
-                  () => Navigator.pop(context),
-                  isActive: false,
-                ),
-                _buildSidebarItem(
-                  Icons.money_off,
-                  'Dépenses',
-                  () => Navigator.pop(context),
-                  isActive: true,
-                ),
-                _buildSidebarItem(Icons.local_shipping, 'Fournisseurs', () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => SuppliersScreen()),
-                  );
-                }, isActive: false),
-                Divider(height: 20),
-                _buildSidebarItem(Icons.logout, 'Déconnexion', () {
-                  Navigator.pop(context);
-                  _showLogoutDialog();
-                }, isActive: false),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1512,8 +1585,19 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         style: TextStyle(
           color: isActive ? AppTheme.primaryRed : AppTheme.textDark,
           fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+          fontSize: 16,
         ),
       ),
+      trailing: isActive
+          ? Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: AppTheme.primaryRed,
+                shape: BoxShape.circle,
+              ),
+            )
+          : Icon(Icons.chevron_right, color: AppTheme.textLight, size: 20),
       onTap: onTap,
       tileColor: isActive ? AppTheme.primaryRed.withOpacity(0.1) : null,
     );
